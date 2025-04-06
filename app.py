@@ -6,7 +6,58 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from streamlit_folium import st_folium
-from folium.plugins import FloatImage
+import pathlib
+
+# Function to load CSS from the 'assets' folder
+def load_css(file_path):
+    with open(file_path) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+        st.markdown("""
+            <style>
+            div.stButton > button:first-child {
+            display: none; /* Hide unnecessary buttons */
+            }
+            .stSidebar {
+            background-color: #f8f9fa; /* Light background for sidebar */
+            font-family: 'Century Gothic', sans-serif;
+            }
+            .stMarkdown h1 {
+            color: #4CAF50; /* Green title color */
+            text-align: center; /* Center align the title */
+            font-family: 'Century Gothic', sans-serif;
+            }
+            .stMarkdown h2, .stMarkdown h3 {
+            color: #333; /* Darker headings */
+            font-family: 'Century Gothic', sans-serif;
+            }
+            .stDataFrame {
+            border: 1px solid #ddd; /* Add border to tables */
+            border-radius: 5px;
+            padding: 10px;
+            font-family: 'Century Gothic', sans-serif;
+            }
+            .stSidebar .css-18e3th9 {
+                display: flex;
+                justify-content: flex-start;
+            }
+            .css-1cpxqw2 {
+                display: flex;
+                flex-direction: column;
+            }
+            .css-17b6wyv {
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+            }
+            .css-162dklb {
+                margin-right: 20px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+# Load the external CSS
+css_path = pathlib.Path("assets/style.css")
+load_css(css_path)
 
 # Define data folder paths
 DATA_FOLDERS = {
@@ -24,7 +75,7 @@ LEGEND_FILES = {
 }
 
 # Default map center coordinates
-DEFAULT_MAP_CENTER = [20.5937, 78.9629]  # Center of India
+DEFAULT_MAP_CENTER = [19.0760, 72.8777]  # Mumbai Coordinates
 
 # City locations
 CITY_LOCATIONS = {
@@ -85,77 +136,83 @@ def load_vector(shapefile_path, map_obj, layer_name):
     except Exception as e:
         st.error(f"❌ Error loading vector file: {shapefile_path} - {e}")
 
-def show_map(region, city, time_projection):
+def show_map(region, city, time_projection, extent):
     """Creates a Folium map centered on the selected region or city."""
-    
-    if region == "India":
-        map_center = DEFAULT_MAP_CENTER
-        zoom_level = 5  # Zoomed out for India view
-        layer_name = "India Boundary"
-        vector_file = f"data/india_boundary.shp"  # Assuming a national boundary layer
-    else:
+    if region == "Mumbai":
         map_center = CITY_LOCATIONS.get(city, DEFAULT_MAP_CENTER)
         zoom_level = 10  # Zoomed in for city view
-        layer_name = f"{city} Boundary ({time_projection})"
-        vector_file = f"{DATA_FOLDERS.get(time_projection, 'data/base/')}{city}.shp"
+    else:
+        map_center = DEFAULT_MAP_CENTER
+        zoom_level = 5  # Zoomed out for India view
 
     city_map = folium.Map(location=map_center, zoom_start=zoom_level, tiles="CartoDB Positron")
 
-    # Load boundary layer
-    st.write(f"🗺️ Checking boundary layer: {vector_file}")
-    load_vector(vector_file, city_map, layer_name)
+    # Load selected extent layer (e.g., ULB or Village)
+    if extent == "ULB":
+        vector_file = f"data/{region}/ulb.shp"
+    elif extent == "Village":
+        vector_file = f"data/{region}/village.shp"
+    else:
+        vector_file = f"data/{region}/mmr.shp"
+    
+    load_vector(vector_file, city_map, extent)
 
     return city_map
 
-def add_layers(map_obj, region, city, time_projection, risk_types):
-    """Adds vector and raster layers for the selected risk types."""
-    data_folder = DATA_FOLDERS.get(time_projection, "data/base/")
-    
-    for risk in risk_types:
-        raster_file = f"{data_folder}{city}_{risk}.tif"
-        st.write(f"🔄 Processing raster file: {raster_file}")
-
-        png_file, bounds = save_raster_as_png(raster_file)
-
-        if png_file:
-            overlay_raster_on_map(map_obj, png_file, bounds, f"{risk} Risk ({time_projection})")
-
-        # Add legend for the risk type
-        legend_path = LEGEND_FILES.get(risk)
-        if legend_path and os.path.exists(legend_path):
-            FloatImage(legend_path, bottom=10, left=10).add_to(map_obj)
-            st.success(f"✅ Legend added for {risk}")
-
-    folium.LayerControl().add_to(map_obj)
-
 def sidebar():
-    """Creates a sidebar with user filters for region, city, time projection, and risk type selection."""
-    st.sidebar.title("🌍 Climate Risk Assessment Filters")
+    """Creates a sidebar with user filters for region, city, extent, time projection, and risk type selection."""
+    st.sidebar.title("🌍 Climate Risk Assessment Dashboard ")
     
-    region = st.sidebar.selectbox("Select Region", ["India", "City-Specific"], key="sidebar_region")
-    city = None
-    if region == "City-Specific":
-        city = st.sidebar.selectbox("Select City", ["Mumbai", "Delhi", "Bangalore"], key="sidebar_city")
+    region = st.sidebar.selectbox("Select Region", ["Mumbai"], key="sidebar_region")
+    city = st.sidebar.selectbox("Select City", ["Mumbai", "Delhi", "Bangalore"], key="sidebar_city")
+    extent = st.sidebar.selectbox("Choose Extent", ["Urban Local Body", "Village"], key="sidebar_extent")
     
+    if extent == "Village":
+        tehsil = st.sidebar.selectbox("Select Tehsil", ["Tehsil 1", "Tehsil 2"], key="sidebar_tehsil")
+
     time_projection = st.sidebar.radio("Select Time Projection", ["Base", "2030", "2050", "2080"], key="sidebar_time")
     risk_type = st.sidebar.multiselect("Select Risk Type", ["Flood", "Heat", "Drought"], key="sidebar_risk")
     
-    return region, city, time_projection, risk_type
+    return region, city, time_projection, risk_type, extent
+
+def display_region_stats(region, extent):
+    """Displays statistics corresponding to the selected region and extent."""
+    # Dummy stats based on region and extent
+    if extent == "Urban Local Body":
+        st.write("📊 **Urban Local Body Stats**: High flood risk, population of 1 million.")
+    elif extent == "Village":
+        st.write("📊 **Village Stats**: Moderate heat risk, low flood risk.")
+    else:
+        st.write("📊 **Region Stats**: General stats for the entire Mumbai Metropolitan Region.")
 
 def main():
     """Main function to display the dashboard and handle user interactions."""
-    st.title("🌍 Climate Risk Assessment Dashboard")
+    st.title("🌍Climate Risk Assessment Dashboard")
     
-    region, city, time_projection, risk_types = sidebar()
+    region, city, time_projection, risk_types, extent = sidebar()
+
+    # Display region-specific statistics
+    display_region_stats(region, extent)
     
-    city_map = show_map(region, city, time_projection)
+    # Generate the map with selected region, time projection, and extent
+    city_map = show_map(region, city, time_projection, extent)
     
     if risk_types:
         st.write("🛰️ Adding selected risk layers...")
-        add_layers(city_map, region, city, time_projection, risk_types)
-        st.subheader(f"**Selected Risk Types:** {', '.join(risk_types)}")
+        for risk_type in risk_types:
+            raster_path = f"data/{region}/{time_projection}/{risk_type.lower()}.tif"
+            raster_png, bounds = save_raster_as_png(raster_path)
+            overlay_raster_on_map(city_map, raster_png, bounds, risk_type)
     
-    st_folium(city_map, width=700, height=500)
+    # Layout: 2 columns, one for map and one for stats
+    col1, col2 = st.columns([3, 1])  # 3:1 ratio
+    
+    with col1:
+        st_folium(city_map, width="100%", height=600)  # Adjust map size for a smaller display
+    
+    with col2:
+        st.write("📊 **Statistical Information**:")
+        display_region_stats(region, extent)
 
 if __name__ == "__main__":
     main()
